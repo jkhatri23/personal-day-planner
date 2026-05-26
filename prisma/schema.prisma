@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Week {
+  id        String   @id @default(cuid())
+  userId    String   @default("jordan")
+  startDate DateTime
+  intention String?
+  days      Day[]
+  createdAt DateTime @default(now())
+
+  @@unique([userId, startDate])
+}
+
+model Day {
+  id         String    @id @default(cuid())
+  date       DateTime  @unique
+  weekId     String
+  week       Week      @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  tasks      Task[]
+  reckonedAt DateTime?
+  reflection String?
+}
+
+model Task {
+  id              String    @id @default(cuid())
+  title           String
+  notes           String?
+  dayId           String
+  day             Day       @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  priority        String    @default("MEDIUM") // LOW | MEDIUM | HIGH
+  estimatedMins   Int?
+  status          String    @default("PLANNED") // PLANNED | DONE | VOIDED | OWED | SETTLED
+  completedAt     DateTime?
+  backdated       Boolean   @default(false)
+  rescheduleCount Int       @default(0)
+  voidReason      String?
+  debt            Debt?
+  position        Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model Debt {
+  id            String    @id @default(cuid())
+  taskId        String    @unique
+  task          Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  amountCents   Int       @default(1000)
+  gofundmeUrl   String?
+  donationProof String?
+  settledAt     DateTime?
+  createdAt     DateTime  @default(now())
+}
+
+model Settings {
+  id                  String   @id @default("singleton")
+  userId              String   @unique @default("jordan")
+  defaultAmountCents  Int      @default(1000)
+  weeklyVoidBudget    Int      @default(2)
+  timezone            String   @default("America/Toronto")
+  gofundmeUrlsJson    String   @default("[]") // JSON array of strings
+  updatedAt           DateTime @updatedAt
+}
