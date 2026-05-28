@@ -15,32 +15,34 @@ export default async function TodayPage() {
   const fresh = await prisma.day.findUnique({
     where: { id: day.id },
     include: {
-      tasks: {
-        orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-        include: { debt: true },
-      },
+      tasks: { orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
+      debt: true,
     },
   });
 
-  // Yesterday's stats for the carry-forward digest
   const prev = await prisma.day.findFirst({
     where: { date: { lt: today }, week: { userId: week.userId } },
     orderBy: { date: "desc" },
-    include: { tasks: { include: { debt: true } } },
+    include: { tasks: true, debt: true },
   });
 
   const prevSummary = prev
     ? (() => {
         const tracked = prev.tasks.filter((t) => t.status !== "VOIDED");
-        const done = tracked.filter((t) => t.status === "DONE" || t.status === "SETTLED").length;
-        const owed = prev.tasks
-          .filter((t) => t.debt && !t.debt.settledAt)
-          .reduce((s, t) => s + (t.debt?.amountCents ?? 0), 0);
+        const done = tracked.filter(
+          (t) => t.status === "DONE" || t.status === "SETTLED"
+        ).length;
+        const owedLabel =
+          prev.debt && !prev.debt.settledAt
+            ? `owe ${formatCents(prev.debt.amountCents)}`
+            : prev.debt?.settledAt
+              ? "debt settled"
+              : "no debt";
         return {
           date: prev.date,
           done,
           total: tracked.length,
-          owedLabel: formatCents(owed),
+          owedLabel,
         };
       })()
     : null;
@@ -63,7 +65,7 @@ export default async function TodayPage() {
               Yesterday
             </p>
             <p className="mono text-sm text-slate-800">
-              {prevSummary.done}/{prevSummary.total} done · owe {prevSummary.owedLabel}
+              {prevSummary.done}/{prevSummary.total} done · {prevSummary.owedLabel}
             </p>
           </div>
         )}
@@ -71,6 +73,7 @@ export default async function TodayPage() {
 
       <TodayClient
         initialTasks={fresh?.tasks ?? []}
+        dayDebt={fresh?.debt ?? null}
         dayId={day.id}
         weekId={week.id}
         settings={settings}

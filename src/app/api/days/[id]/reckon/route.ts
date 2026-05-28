@@ -9,10 +9,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const body = reckonSchema.parse(await req.json());
     const day = await prisma.day.findUnique({
       where: { id: params.id },
-      include: {
-        tasks: { include: { debt: true } },
-        week: true,
-      },
+      include: { tasks: true, week: true, debt: true },
     });
     if (!day) return bad("Day not found", 404);
     if (day.reckonedAt) return bad("Already reckoned", 409);
@@ -29,7 +26,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         return bad(`Task ${r.taskId} is not a PLANNED task on this day`, 422);
     }
 
-    // void budget check across the week
     const newVoids = body.resolutions.filter((r) => r.kind === "VOID").length;
     if (newVoids > 0) {
       const used = await prisma.task.count({
@@ -49,6 +45,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       }
     }
 
+    const anyOwed = body.resolutions.some((r) => r.kind === "OWE");
+
     const result = await prisma.$transaction(async (tx) => {
       for (const r of body.resolutions) {
         if (r.kind === "DONE") {
@@ -66,24 +64,28 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
             where: { id: r.taskId },
             data: { status: "OWED" },
           });
-          await tx.debt.upsert({
-            where: { taskId: r.taskId },
-            update: {
-              amountCents: r.amountCents,
-              gofundmeUrl: r.gofundmeUrl ?? null,
-            },
-            create: {
-              taskId: r.taskId,
-              amountCents: r.amountCents,
-              gofundmeUrl: r.gofundmeUrl ?? null,
-            },
-          });
         }
       }
+
+      if (anyOwed) {
+        await tx.debt.upsert({
+          where: { dayId: day.id },
+          update: {
+            amountCents: settings.defaultAmountCents,
+            gofundmeUrl: body.gofundmeUrl ?? null,
+          },
+          create: {
+            dayId: day.id,
+            amountCents: settings.defaultAmountCents,
+            gofundmeUrl: body.gofundmeUrl ?? null,
+          },
+        });
+      }
+
       const updated = await tx.day.update({
         where: { id: day.id },
         data: { reckonedAt: new Date(), reflection: body.reflection ?? null },
-        include: { tasks: { include: { debt: true } } },
+        include: { tasks: true, debt: true },
       });
       return updated;
     });

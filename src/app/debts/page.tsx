@@ -7,7 +7,13 @@ export const dynamic = "force-dynamic";
 
 export default async function DebtsPage() {
   const debts = await prisma.debt.findMany({
-    include: { task: { include: { day: true } } },
+    include: {
+      day: {
+        include: {
+          tasks: { where: { status: { in: ["OWED", "SETTLED"] } } },
+        },
+      },
+    },
     orderBy: { createdAt: "desc" },
   });
   const owed = debts.filter((d) => !d.settledAt);
@@ -20,11 +26,15 @@ export default async function DebtsPage() {
       <header className="flex items-baseline justify-between">
         <h1 className="text-2xl font-semibold">Debts</h1>
         <div className="mono text-sm">
-          <span className="text-red-700">owed {formatCents(owedTotal)}</span>
-          {" · "}
+          <span className="text-red-700">owed {formatCents(owedTotal)}</span>{" · "}
           <span className="text-green-700">settled {formatCents(settledTotal)}</span>
         </div>
       </header>
+
+      <p className="text-xs text-slate-500">
+        One debt per day. You owe the day's flat amount if even a single task
+        ends up un-done at end-of-day.
+      </p>
 
       <section>
         <h2 className="mb-2 mono text-xs uppercase text-slate-500">Outstanding</h2>
@@ -35,17 +45,17 @@ export default async function DebtsPage() {
             {owed.map((d) => (
               <li key={d.id} className="px-3 py-2">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-sm">{d.task.title}</span>
+                  <span className="text-sm font-medium">
+                    {fmtDayLabel(d.day.date)}
+                  </span>
                   <span className="mono text-sm text-red-700">
                     {formatCents(d.amountCents)}
                   </span>
                 </div>
                 <p className="mono text-[10px] text-slate-400">
-                  {fmtDayLabel(d.task.day.date)}
+                  {d.day.tasks.length} task
+                  {d.day.tasks.length === 1 ? "" : "s"} missed
                   {d.gofundmeUrl ? ` · ${d.gofundmeUrl}` : ""}
-                </p>
-                <p className="mt-1 text-xs text-red-700">
-                  Settle through the next reckoning, or via Today view.
                 </p>
               </li>
             ))}
@@ -62,13 +72,15 @@ export default async function DebtsPage() {
             {settled.map((d) => (
               <li key={d.id} className="px-3 py-2">
                 <div className="flex items-baseline justify-between">
-                  <span className="text-sm text-slate-700">{d.task.title}</span>
+                  <span className="text-sm text-slate-700">
+                    {fmtDayLabel(d.day.date)}
+                  </span>
                   <span className="mono text-sm text-green-700">
                     settled {formatCents(d.amountCents)}
                   </span>
                 </div>
                 <p className="mono text-[10px] text-slate-400">
-                  {fmtDayLabel(d.task.day.date)} · proof: {d.donationProof}
+                  proof: {d.donationProof}
                 </p>
               </li>
             ))}
@@ -77,7 +89,9 @@ export default async function DebtsPage() {
       </section>
 
       <p className="text-xs text-slate-400">
-        <Link href="/settings" className="underline">Manage campaigns →</Link>
+        <Link href="/settings" className="underline">
+          Manage campaigns →
+        </Link>
       </p>
     </div>
   );

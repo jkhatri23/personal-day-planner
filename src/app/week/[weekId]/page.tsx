@@ -14,10 +14,8 @@ export default async function WeekPage({ params }: { params: { weekId: string } 
       days: {
         orderBy: { date: "asc" },
         include: {
-          tasks: {
-            orderBy: [{ position: "asc" }, { createdAt: "asc" }],
-            include: { debt: true },
-          },
+          debt: true,
+          tasks: { orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
         },
       },
     },
@@ -26,10 +24,8 @@ export default async function WeekPage({ params }: { params: { weekId: string } 
 
   const all = week.days.flatMap((d) => d.tasks);
   const done = all.filter((t) => t.status === "DONE" || t.status === "SETTLED").length;
-  const owed = all.filter((t) => t.status === "OWED").length;
-  const owedCents = all
-    .filter((t) => t.debt && !t.debt.settledAt)
-    .reduce((s, t) => s + (t.debt?.amountCents ?? 0), 0);
+  const owedDays = week.days.filter((d) => d.debt && !d.debt.settledAt);
+  const owedCents = owedDays.reduce((s, d) => s + (d.debt?.amountCents ?? 0), 0);
 
   return (
     <div className="space-y-4">
@@ -47,9 +43,9 @@ export default async function WeekPage({ params }: { params: { weekId: string } 
         </div>
         <div className="flex items-center gap-4 mono text-sm">
           <span className="text-green-700">done: {done}</span>
-          {owed > 0 && (
+          {owedDays.length > 0 && (
             <span className="text-red-700">
-              owed: {owed} ({formatCents(owedCents)})
+              owed days: {owedDays.length} ({formatCents(owedCents)})
             </span>
           )}
           <span className="text-slate-500">total: {all.length}</span>

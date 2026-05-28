@@ -70,9 +70,9 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
       )}
 
       <section className="rounded border border-slate-200 p-4">
-        <h2 className="font-semibold">Default donation amount</h2>
+        <h2 className="font-semibold">Daily donation amount</h2>
         <p className="text-xs text-slate-500">
-          Per uncompleted task. Min $5, max $100.
+          Flat amount per day. Owed if any task ends up un-done. Min $5, max $100.
         </p>
         <div className="mt-3 flex items-center gap-2">
           <span className="text-slate-500">$</span>
@@ -86,7 +86,7 @@ export function SettingsClient({ initial }: { initial: AppSettings }) {
             onChange={(e) => setDefaultDollars(Number(e.target.value))}
             onBlur={() => save({ defaultAmountCents: Math.round(defaultDollars * 100) })}
           />
-          <span className="mono text-xs text-slate-400">per task</span>
+          <span className="mono text-xs text-slate-400">per day</span>
         </div>
       </section>
 

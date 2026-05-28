@@ -23,7 +23,12 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       include: {
         days: {
           orderBy: { date: "asc" },
-          include: { tasks: { orderBy: [{ position: "asc" }, { createdAt: "asc" }], include: { debt: true } } },
+          include: {
+            debt: true,
+            tasks: {
+              orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+            },
+          },
         },
       },
     });

@@ -8,7 +8,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const body = settleDebtSchema.parse(await req.json());
     const debt = await prisma.debt.findUnique({
       where: { id: params.id },
-      include: { task: true },
+      include: { day: true },
     });
     if (!debt) return bad("Not found", 404);
     if (debt.settledAt) return bad("Already settled", 409);
@@ -22,8 +22,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           settledAt: new Date(),
         },
       });
-      await tx.task.update({
-        where: { id: debt.taskId },
+      // Flip every OWED task on the day to SETTLED — one donation clears the
+      // whole day, not just one task.
+      await tx.task.updateMany({
+        where: { dayId: debt.dayId, status: "OWED" },
         data: { status: "SETTLED" },
       });
       return d;

@@ -17,15 +17,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
 
     const settings = await getSettings();
-    const weekStart = t.day.week.startDate;
-    const weekEnd = new Date(weekStart);
-    weekEnd.setUTCDate(weekEnd.getUTCDate() + 7);
     const used = await prisma.task.count({
       where: {
         status: "VOIDED",
-        day: {
-          week: { userId: USER_ID, startDate: weekStart },
-        },
+        day: { week: { userId: USER_ID, startDate: t.day.week.startDate } },
       },
     });
     if (used >= settings.weeklyVoidBudget) {
@@ -38,7 +33,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const updated = await prisma.task.update({
       where: { id: params.id },
       data: { status: "VOIDED", voidReason: reason },
-      include: { debt: true },
     });
     return ok(updated);
   } catch (e) {

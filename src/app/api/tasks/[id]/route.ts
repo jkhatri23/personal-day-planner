@@ -30,7 +30,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const task = await prisma.task.update({
       where: { id: params.id },
       data: body,
-      include: { debt: true },
     });
     return ok(task);
   } catch (e) {

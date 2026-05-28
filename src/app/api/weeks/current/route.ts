@@ -10,7 +10,12 @@ export async function GET() {
       include: {
         days: {
           orderBy: { date: "asc" },
-          include: { tasks: { orderBy: [{ position: "asc" }, { createdAt: "asc" }], include: { debt: true } } },
+          include: {
+            debt: true,
+            tasks: {
+              orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+            },
+          },
         },
       },
     });

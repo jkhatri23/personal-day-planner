@@ -18,18 +18,21 @@ type Task = {
   rescheduleCount: number;
   voidReason: string | null;
   position: number;
-  debt: { id: string; amountCents: number; settledAt: Date | null } | null;
 };
+
+type DayDebt = { id: string; amountCents: number; settledAt: Date | null } | null;
 
 const priorityRank: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
 
 export function TodayClient({
   initialTasks,
+  dayDebt,
   dayId,
   weekId,
   settings,
 }: {
   initialTasks: Task[];
+  dayDebt: DayDebt;
   dayId: string;
   weekId: string;
   settings: AppSettings;
@@ -91,7 +94,6 @@ export function TodayClient({
   }
 
   async function pushTomorrow(t: Task) {
-    // Find tomorrow's day id from week
     const res = await fetch(`/api/weeks/${weekId}`).then((r) => r.json());
     const today = new Date();
     const todayMid = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
@@ -110,7 +112,6 @@ export function TodayClient({
     });
   }
 
-  // Keyboard shortcuts
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (
@@ -142,8 +143,33 @@ export function TodayClient({
     return () => window.removeEventListener("keydown", onKey);
   }, [sorted, cursor]);
 
+  const dayAmountLabel = formatCents(settings.defaultAmountCents);
+
   return (
     <section className="space-y-4">
+      <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        <span className="font-semibold text-slate-800">
+          {dayAmountLabel}/day rule:
+        </span>{" "}
+        miss even one task at end-of-day and you owe {dayAmountLabel} for the whole
+        day. Finish them all to owe nothing.
+      </div>
+
+      {dayDebt && (
+        <div
+          className={cn(
+            "rounded border px-3 py-2 text-sm",
+            dayDebt.settledAt
+              ? "border-green-200 bg-green-50 text-green-800"
+              : "border-red-200 bg-red-50 text-red-700"
+          )}
+        >
+          {dayDebt.settledAt
+            ? `Today's ${formatCents(dayDebt.amountCents)} debt is settled.`
+            : `Today's ${formatCents(dayDebt.amountCents)} debt is open. Settle from the Debts page once you've donated.`}
+        </div>
+      )}
+
       {totalMins > 0 && (
         <div className="flex items-center gap-2 text-sm text-slate-500">
           <span className="mono">
@@ -166,7 +192,8 @@ export function TodayClient({
       <ul className="divide-y divide-slate-200 rounded border border-slate-200">
         {sorted.length === 0 && (
           <li className="px-4 py-8 text-center text-sm text-slate-500">
-            No tasks planned. <button
+            No tasks planned.{" "}
+            <button
               className="font-semibold text-slate-900 underline-offset-2 hover:underline"
               onClick={() => setCreating(true)}
             >
@@ -185,7 +212,12 @@ export function TodayClient({
           >
             <button
               className="mt-0.5 text-slate-400 hover:text-slate-900 disabled:opacity-40"
-              disabled={!!busy || t.status === "VOIDED" || t.status === "OWED" || t.status === "SETTLED"}
+              disabled={
+                !!busy ||
+                t.status === "VOIDED" ||
+                t.status === "OWED" ||
+                t.status === "SETTLED"
+              }
               onClick={() => toggle(t)}
               aria-label="Toggle done"
             >
@@ -224,15 +256,13 @@ export function TodayClient({
                 {t.rescheduleCount > 0 && (
                   <span className="mono text-[10px] text-amber-600">·rescheduled</span>
                 )}
-                {t.status === "OWED" && t.debt && (
+                {t.status === "OWED" && (
                   <span className="mono text-xs text-red-700">
-                    ${(t.debt.amountCents / 100).toFixed(2)} owed
+                    counted toward day's debt
                   </span>
                 )}
               </div>
-              {t.notes && (
-                <p className="mt-0.5 text-xs text-slate-500">{t.notes}</p>
-              )}
+              {t.notes && <p className="mt-0.5 text-xs text-slate-500">{t.notes}</p>}
               {t.voidReason && (
                 <p className="mt-0.5 text-xs italic text-slate-400">
                   voided: {t.voidReason}

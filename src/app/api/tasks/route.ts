@@ -31,7 +31,6 @@ export async function POST(req: NextRequest) {
         estimatedMins: body.estimatedMins ?? null,
         position: (max._max.position ?? -1) + 1,
       },
-      include: { debt: true },
     });
     return ok(task, 201);
   } catch (e) {

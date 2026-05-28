@@ -7,8 +7,6 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 async function computeStreak() {
-  // Streak: consecutive prior days (ending today or yesterday) where the day
-  // is reckonedAt != null AND either all tasks DONE/SETTLED, or fully resolved.
   const days = await prisma.day.findMany({
     where: { week: { userId: USER_ID } },
     orderBy: { date: "desc" },
@@ -17,7 +15,6 @@ async function computeStreak() {
   let streak = 0;
   for (const d of days) {
     if (!d.reckonedAt) break;
-    // honest reckoning counts as streak-extending
     streak += 1;
   }
   return streak;
@@ -29,7 +26,7 @@ export default async function ReviewPage({ params }: { params: { weekId: string 
     include: {
       days: {
         orderBy: { date: "asc" },
-        include: { tasks: { include: { debt: true } } },
+        include: { tasks: true, debt: true },
       },
     },
   });
@@ -38,16 +35,14 @@ export default async function ReviewPage({ params }: { params: { weekId: string 
   const all = week.days.flatMap((d) => d.tasks);
   const tracked = all.filter((t) => t.status !== "VOIDED");
   const done = all.filter((t) => t.status === "DONE" || t.status === "SETTLED").length;
-  const owed = all.filter((t) => t.status === "OWED").length;
   const voided = all.filter((t) => t.status === "VOIDED").length;
   const backdated = all.filter((t) => t.backdated).length;
   const reckonedDays = week.days.filter((d) => d.reckonedAt).length;
-  const owedCents = all
-    .filter((t) => t.debt && !t.debt.settledAt)
-    .reduce((s, t) => s + (t.debt?.amountCents ?? 0), 0);
-  const settledCents = all
-    .filter((t) => t.debt?.settledAt)
-    .reduce((s, t) => s + (t.debt?.amountCents ?? 0), 0);
+  const owedDays = week.days.filter((d) => d.debt && !d.debt.settledAt);
+  const settledDays = week.days.filter((d) => d.debt?.settledAt);
+  const cleanDays = week.days.filter((d) => d.reckonedAt && !d.debt);
+  const owedCents = owedDays.reduce((s, d) => s + (d.debt?.amountCents ?? 0), 0);
+  const settledCents = settledDays.reduce((s, d) => s + (d.debt?.amountCents ?? 0), 0);
 
   const rescheduled = [...all]
     .filter((t) => t.rescheduleCount > 0)
@@ -79,9 +74,9 @@ export default async function ReviewPage({ params }: { params: { weekId: string 
       </header>
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="Completion" value={`${pct}%`} sub={`${done}/${tracked.length} tracked`} />
-        <StatCard label="Owed" value={formatCents(owedCents)} sub={`${owed} unsettled`} tone="red" />
-        <StatCard label="Settled" value={formatCents(settledCents)} sub="this week" tone="green" />
+        <StatCard label="Task completion" value={`${pct}%`} sub={`${done}/${tracked.length} tracked`} />
+        <StatCard label="Clean days" value={`${cleanDays.length}`} sub={`/${reckonedDays} reckoned`} tone="green" />
+        <StatCard label="Owed" value={formatCents(owedCents)} sub={`${owedDays.length} day(s)`} tone="red" />
         <StatCard label="Streak" value={`${streak}d`} sub="reckoned in a row" />
       </section>
 
@@ -101,6 +96,9 @@ export default async function ReviewPage({ params }: { params: { weekId: string 
           </li>
           <li>
             days reckoned: <span className="mono">{reckonedDays}/7</span>
+          </li>
+          <li>
+            settled this week: <span className="mono text-green-700">{formatCents(settledCents)}</span>
           </li>
         </ul>
       </section>
@@ -135,7 +133,9 @@ export default async function ReviewPage({ params }: { params: { weekId: string 
               </li>
             ))}
           {week.days.every((d) => !d.reflection) && (
-            <li className="text-sm text-slate-500">No reflections logged this week.</li>
+            <li className="text-sm text-slate-500">
+              No reflections logged this week.
+            </li>
           )}
         </ul>
       </section>
@@ -169,8 +169,8 @@ function StatCard({
     tone === "red"
       ? "text-red-700"
       : tone === "green"
-      ? "text-green-700"
-      : "text-slate-900";
+        ? "text-green-700"
+        : "text-slate-900";
   return (
     <div className="rounded border border-slate-200 p-3">
       <p className="mono text-[10px] uppercase text-slate-500">{label}</p>

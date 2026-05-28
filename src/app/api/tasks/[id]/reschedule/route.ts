@@ -28,7 +28,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         rescheduleCount: { increment: 1 },
         position: (max._max.position ?? -1) + 1,
       },
-      include: { debt: true },
     });
     return ok(updated);
   } catch (e) {

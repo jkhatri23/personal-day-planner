@@ -45,17 +45,15 @@ const resolutionSchema = z.discriminatedUnion("kind", [
     taskId: z.string(),
     reason: z.string().trim().min(10).max(500),
   }),
-  z.object({
-    kind: z.literal("OWE"),
-    taskId: z.string(),
-    amountCents: z.number().int().min(500).max(100_00).default(1000),
-    gofundmeUrl: z.string().url().optional().nullable(),
-  }),
+  z.object({ kind: z.literal("OWE"), taskId: z.string() }),
 ]);
 
+// One debt per day, fixed amount from settings, triggered if any task is OWE.
+// gofundmeUrl is selected once per day (not per task).
 export const reckonSchema = z.object({
   resolutions: z.array(resolutionSchema),
   reflection: z.string().max(500).optional().nullable(),
+  gofundmeUrl: z.string().url().optional().nullable(),
 });
 
 const GFM = /^https?:\/\/(?:[a-z0-9-]+\.)?gofundme\.com(?:\/.*)?$/i;

@@ -10,48 +10,37 @@ export const dynamic = "force-dynamic";
 export default async function ReckonPage({ params }: { params: { dayId: string } }) {
   const day = await prisma.day.findUnique({
     where: { id: params.dayId },
-    include: {
-      tasks: { include: { debt: true } },
-      week: true,
-    },
+    include: { tasks: true, week: true, debt: true },
   });
   if (!day) notFound();
   if (day.reckonedAt) redirect("/today");
 
   const planned = day.tasks.filter((t) => t.status === "PLANNED");
-  // No planned tasks → still close the day so the gate releases.
   const settings = await getSettings();
 
-  // How many voids already used this week (other days).
   const voidsUsed = await prisma.task.count({
     where: {
       status: "VOIDED",
-      day: {
-        week: { startDate: day.week.startDate },
-        id: { not: day.id },
-      },
+      day: { week: { startDate: day.week.startDate }, id: { not: day.id } },
     },
   });
 
-  // Outstanding debts from prior days that must be settled before "continue".
   const openDebts = await prisma.debt.findMany({
     where: {
       settledAt: null,
-      task: {
-        day: {
-          date: { lte: day.date },
-          week: { startDate: day.week.startDate },
-        },
+      day: {
+        date: { lte: day.date },
+        week: { startDate: day.week.startDate },
       },
     },
-    include: { task: { include: { day: true } } },
+    include: { day: { include: { tasks: { where: { status: "OWED" } } } } },
+    orderBy: { createdAt: "asc" },
   });
 
   return (
     <ReckonClient
       day={{
         id: day.id,
-        date: day.date,
         dateLabel: fmtDayLabel(day.date),
         planned,
         voidsUsedThisWeek: voidsUsed,
@@ -65,8 +54,8 @@ export default async function ReckonPage({ params }: { params: { dayId: string }
         amountCents: d.amountCents,
         amountLabel: formatCents(d.amountCents),
         gofundmeUrl: d.gofundmeUrl,
-        taskTitle: d.task.title,
-        dayLabel: fmtDayLabel(d.task.day.date),
+        dayLabel: fmtDayLabel(d.day.date),
+        owedTaskTitles: d.day.tasks.map((t) => t.title),
       }))}
     />
   );

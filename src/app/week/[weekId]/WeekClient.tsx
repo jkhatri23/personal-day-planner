@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -27,9 +27,15 @@ type Task = {
   position: number;
   rescheduleCount: number;
   voidReason: string | null;
-  debt: { id: string; amountCents: number; settledAt: Date | null } | null;
 };
-type Day = { id: string; date: Date; tasks: Task[]; reckonedAt: Date | null };
+type DayDebt = { id: string; amountCents: number; settledAt: Date | null } | null;
+type Day = {
+  id: string;
+  date: Date;
+  tasks: Task[];
+  reckonedAt: Date | null;
+  debt: DayDebt;
+};
 type Week = { id: string; startDate: Date; intention: string | null; days: Day[] };
 
 export function WeekClient({ week }: { week: Week }) {
@@ -120,7 +126,15 @@ function DayColumn({
           </p>
         </div>
         <div className="flex items-center gap-1">
-          {day.reckonedAt && (
+          {day.debt && !day.debt.settledAt && (
+            <span className="mono text-[10px] uppercase text-red-700">
+              ${(day.debt.amountCents / 100).toFixed(0)} owed
+            </span>
+          )}
+          {day.debt?.settledAt && (
+            <span className="mono text-[10px] uppercase text-green-700">settled</span>
+          )}
+          {day.reckonedAt && !day.debt && (
             <span className="mono text-[10px] uppercase text-green-700">reckoned</span>
           )}
           <button
@@ -179,9 +193,6 @@ function TaskCard({ task }: { task: Task }) {
       </div>
       {task.estimatedMins != null && (
         <span className="mono text-[10px] text-slate-400">{task.estimatedMins}m</span>
-      )}
-      {task.status === "OWED" && task.debt && (
-        <span className="mono ml-1 text-[10px]">${(task.debt.amountCents / 100).toFixed(0)}</span>
       )}
     </li>
   );

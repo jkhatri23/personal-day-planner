@@ -8,7 +8,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       where: { id: params.id },
       include: {
         days: {
-          include: { tasks: { include: { debt: true } } },
+          include: { tasks: true, debt: true },
           orderBy: { date: "asc" },
         },
       },
@@ -24,15 +24,12 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       {} as Record<string, number>
     );
     const total = all.filter((t) => t.status !== "VOIDED").length;
-    const done = (counts.DONE ?? 0) + (counts.SETTLED ?? 0);
     const completionPct = total === 0 ? 0 : Math.round((100 * (counts.DONE ?? 0)) / total);
 
-    const owedCents = all
-      .filter((t) => t.debt && !t.debt.settledAt)
-      .reduce((s, t) => s + (t.debt?.amountCents ?? 0), 0);
-    const settledCents = all
-      .filter((t) => t.debt?.settledAt)
-      .reduce((s, t) => s + (t.debt?.amountCents ?? 0), 0);
+    const owedDays = week.days.filter((d) => d.debt && !d.debt.settledAt);
+    const settledDays = week.days.filter((d) => d.debt?.settledAt);
+    const owedCents = owedDays.reduce((s, d) => s + (d.debt?.amountCents ?? 0), 0);
+    const settledCents = settledDays.reduce((s, d) => s + (d.debt?.amountCents ?? 0), 0);
 
     const backdated = all.filter((t) => t.backdated).length;
     const rescheduled = [...all]
@@ -47,8 +44,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       startDate: week.startDate,
       counts,
       totalTracked: total,
-      done,
       completionPct,
+      owedDays: owedDays.length,
       owedCents,
       settledCents,
       voidsUsed: counts.VOIDED ?? 0,
