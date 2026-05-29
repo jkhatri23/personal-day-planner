@@ -62,8 +62,11 @@ export const gofundmeUrlSchema = z
   .url()
   .refine((v) => GFM.test(v), "Must be a gofundme.com URL");
 
-export const settleDebtSchema = z.object({
-  donationProof: z.string().trim().min(4).max(500),
+// Settlement is done by uploading the GoFundMe confirmation email/receipt.
+// The settle endpoint parses multipart/form-data; this schema validates the
+// non-file fields. The file itself is required by the endpoint, not zod.
+export const settleDebtMetaSchema = z.object({
+  note: z.string().max(500).optional(),
   gofundmeUrl: gofundmeUrlSchema.optional(),
 });
 

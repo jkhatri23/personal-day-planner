@@ -10,9 +10,10 @@ async function main() {
 
   await prisma.settings.upsert({
     where: { userId: USER_ID },
-    update: {},
+    update: { defaultAmountCents: 700 },
     create: {
       userId: USER_ID,
+      defaultAmountCents: 700,
       gofundmeUrlsJson: JSON.stringify([
         "https://www.gofundme.com/c/act/disaster-relief",
       ]),

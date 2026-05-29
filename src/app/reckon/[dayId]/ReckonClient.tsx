@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, XCircle, DollarSign, AlertTriangle } from "lucide-react";
 import { cn, formatCents } from "@/lib/utils";
+import { SettleDebtForm } from "@/components/SettleDebtForm";
 
 type PlannedTask = {
   id: string;
@@ -56,12 +57,12 @@ export function ReckonClient({
   const [gofundmeUrl, setGofundmeUrl] = useState<string>(
     day.savedGofundmeUrls[0] ?? ""
   );
-  const [proofs, setProofs] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [step, setStep] = useState<"resolve" | "settle">("resolve");
   const [backdateWarn, setBackdateWarn] = useState<string | null>(null);
   const [debtsToSettle, setDebtsToSettle] = useState<OpenDebt[]>(openDebts);
+  const [settled, setSettled] = useState<Set<string>>(new Set());
 
   const allResolved = day.planned.every((t) => choices[t.id]?.kind !== null);
   const voidCount = Object.values(choices).filter((c) => c.kind === "VOID").length;
@@ -121,7 +122,6 @@ export function ReckonClient({
       }
       router.refresh();
 
-      // Refetch open debts (includes the one we may have just created).
       const fresh = await fetch("/api/debts?status=OWED").then((r) => r.json());
       const list: OpenDebt[] = fresh.map((d: any) => ({
         id: d.id,
@@ -147,35 +147,6 @@ export function ReckonClient({
     }
   }
 
-  async function settleAll() {
-    setSubmitting(true);
-    setErr(null);
-    try {
-      for (const d of debtsToSettle) {
-        const proof = proofs[d.id]?.trim();
-        if (!proof) throw new Error(`Need donation proof for ${d.dayLabel}.`);
-        const res = await fetch(`/api/debts/${d.id}/settle`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            donationProof: proof,
-            gofundmeUrl: d.gofundmeUrl ?? gofundmeUrl,
-          }),
-        });
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
-          throw new Error(j.error ?? `HTTP ${res.status}`);
-        }
-      }
-      router.replace("/today");
-      router.refresh();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   async function closeEmpty() {
     setSubmitting(true);
     setErr(null);
@@ -189,7 +160,6 @@ export function ReckonClient({
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? `HTTP ${res.status}`);
       }
-      // If there were already prior open debts, force settle step.
       if (debtsToSettle.length > 0) {
         setStep("settle");
       } else {
@@ -200,6 +170,20 @@ export function ReckonClient({
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function onOneSettled(debtId: string) {
+    const next = new Set(settled);
+    next.add(debtId);
+    setSettled(next);
+    router.refresh();
+    if (next.size >= debtsToSettle.length) {
+      // Brief delay so user sees the green state before navigation.
+      setTimeout(() => {
+        router.replace("/today");
+        router.refresh();
+      }, 400);
     }
   }
 
@@ -258,21 +242,14 @@ export function ReckonClient({
                       </span>
                     )}
                   </span>
-                  <span
-                    className={cn(
-                      willOwe ? "text-red-700" : "text-slate-500"
-                    )}
-                  >
+                  <span className={cn(willOwe ? "text-red-700" : "text-slate-500")}>
                     day cost: {willOwe ? day.defaultAmountLabel : "$0.00"}
                   </span>
                 </div>
 
                 <ul className="space-y-3">
                   {day.planned.map((t) => (
-                    <li
-                      key={t.id}
-                      className="rounded border border-slate-200 bg-white p-4"
-                    >
+                    <li key={t.id} className="rounded border border-slate-200 bg-white p-4">
                       <div className="flex items-baseline justify-between gap-2">
                         <div>
                           <p className="font-medium">{t.title}</p>
@@ -349,10 +326,11 @@ export function ReckonClient({
                 {willOwe && (
                   <div className="mt-4 rounded border border-red-200 bg-red-50 p-3">
                     <p className="text-sm text-red-800">
-                      You missed {oweCount} task{oweCount === 1 ? "" : "s"}.
-                      You'll owe a flat{" "}
-                      <span className="font-semibold">{day.defaultAmountLabel}</span> for
-                      this day.
+                      You missed {oweCount} task{oweCount === 1 ? "" : "s"}. You'll
+                      owe a flat{" "}
+                      <span className="font-semibold">{day.defaultAmountLabel}</span>{" "}
+                      for this day. (GoFundMe charges in USD; that's the equivalent
+                      of about $10 CAD.)
                     </p>
                     <label className="mt-2 block">
                       <span className="mono text-[10px] uppercase text-red-700">
@@ -425,10 +403,9 @@ export function ReckonClient({
         {step === "settle" && (
           <SettleStep
             debts={debtsToSettle}
-            proofs={proofs}
-            setProofs={setProofs}
-            settling={submitting}
-            settleAll={settleAll}
+            settled={settled}
+            savedUrls={day.savedGofundmeUrls}
+            onSettled={onOneSettled}
           />
         )}
 
@@ -513,19 +490,17 @@ function ChoiceButton({
 
 function SettleStep({
   debts,
-  proofs,
-  setProofs,
-  settling,
-  settleAll,
+  settled,
+  savedUrls,
+  onSettled,
 }: {
   debts: OpenDebt[];
-  proofs: Record<string, string>;
-  setProofs: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  settling: boolean;
-  settleAll: () => void;
+  settled: Set<string>;
+  savedUrls: string[];
+  onSettled: (debtId: string) => void;
 }) {
   const totalCents = debts.reduce((s, d) => s + d.amountCents, 0);
-  const allFilled = debts.every((d) => proofs[d.id]?.trim());
+  const remaining = debts.filter((d) => !settled.has(d.id));
   return (
     <div className="space-y-4">
       <div className="rounded border border-red-200 bg-red-50 px-4 py-3">
@@ -534,52 +509,80 @@ function SettleStep({
         </p>
         <p className="text-sm text-red-700">
           Total outstanding: {formatCents(totalCents)} across {debts.length}{" "}
-          day{debts.length === 1 ? "" : "s"}. Donate, then paste a confirmation
-          URL or receipt ID per day.
+          day{debts.length === 1 ? "" : "s"}.{" "}
+          {remaining.length > 0
+            ? `${remaining.length} left to settle.`
+            : "All settled — redirecting…"}
         </p>
       </div>
 
-      <ul className="space-y-2">
-        {debts.map((d) => (
-          <li key={d.id} className="rounded border border-slate-200 bg-white p-3">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-sm font-medium">{d.dayLabel}</span>
-              <span className="mono text-xs text-red-700">{d.amountLabel}</span>
-            </div>
-            <p className="mono text-[10px] text-slate-400">
-              {d.owedTaskTitles.length} task
-              {d.owedTaskTitles.length === 1 ? "" : "s"} missed:{" "}
-              {d.owedTaskTitles.slice(0, 3).join(", ")}
-              {d.owedTaskTitles.length > 3
-                ? `, +${d.owedTaskTitles.length - 3} more`
-                : ""}
-            </p>
-            {d.gofundmeUrl && (
-              <p className="mono mt-1 text-[10px] text-slate-500">
-                → <a href={d.gofundmeUrl} target="_blank" rel="noopener noreferrer" className="underline">{d.gofundmeUrl}</a>
-              </p>
-            )}
-            <input
-              className="mono mt-2 w-full rounded border border-slate-300 px-2 py-1 text-xs"
-              placeholder="Donation confirmation URL or receipt ID"
-              value={proofs[d.id] ?? ""}
-              onChange={(e) =>
-                setProofs((p) => ({ ...p, [d.id]: e.target.value }))
-              }
-            />
-          </li>
-        ))}
-      </ul>
+      <ol className="list-decimal space-y-1 pl-5 text-xs text-slate-600">
+        <li>Open the GoFundMe campaign linked below and donate the listed amount.</li>
+        <li>Save the confirmation email GoFundMe sends you (Print → Save as PDF, export .eml, or screenshot).</li>
+        <li>Upload the file in the form for each day below. The debt clears once the file is attached.</li>
+      </ol>
 
-      <div className="flex justify-end">
-        <button
-          className="rounded bg-red-700 px-5 py-2 text-sm font-medium text-white hover:bg-red-800 disabled:opacity-50"
-          disabled={!allFilled || settling}
-          onClick={settleAll}
-        >
-          Settle & continue
-        </button>
-      </div>
+      <ul className="space-y-3">
+        {debts.map((d) => {
+          const isSettled = settled.has(d.id);
+          return (
+            <li
+              key={d.id}
+              className={cn(
+                "rounded border p-3",
+                isSettled ? "border-green-200 bg-green-50" : "border-slate-200 bg-white"
+              )}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">{d.dayLabel}</p>
+                  <p className="mono text-[10px] text-slate-400">
+                    {d.owedTaskTitles.length} task
+                    {d.owedTaskTitles.length === 1 ? "" : "s"} missed:{" "}
+                    {d.owedTaskTitles.slice(0, 3).join(", ")}
+                    {d.owedTaskTitles.length > 3
+                      ? `, +${d.owedTaskTitles.length - 3} more`
+                      : ""}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    "mono text-xs",
+                    isSettled ? "text-green-700" : "text-red-700"
+                  )}
+                >
+                  {isSettled ? "✓ settled" : d.amountLabel}
+                </span>
+              </div>
+              {d.gofundmeUrl && (
+                <p className="mono mt-1 text-[10px]">
+                  →{" "}
+                  <a
+                    href={d.gofundmeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    {d.gofundmeUrl}
+                  </a>
+                </p>
+              )}
+
+              {!isSettled && (
+                <div className="mt-3">
+                  <SettleDebtForm
+                    debtId={d.id}
+                    amountLabel={d.amountLabel}
+                    defaultGofundmeUrl={d.gofundmeUrl}
+                    savedGofundmeUrls={savedUrls}
+                    onSettled={() => onSettled(d.id)}
+                  />
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

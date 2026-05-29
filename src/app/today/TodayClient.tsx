@@ -152,7 +152,8 @@ export function TodayClient({
           {dayAmountLabel}/day rule:
         </span>{" "}
         miss even one task at end-of-day and you owe {dayAmountLabel} for the whole
-        day. Finish them all to owe nothing.
+        day. (GoFundMe bills in USD — that's roughly $10 CAD.) Finish them all to
+        owe nothing.
       </div>
 
       {dayDebt && (
@@ -164,9 +165,16 @@ export function TodayClient({
               : "border-red-200 bg-red-50 text-red-700"
           )}
         >
-          {dayDebt.settledAt
-            ? `Today's ${formatCents(dayDebt.amountCents)} debt is settled.`
-            : `Today's ${formatCents(dayDebt.amountCents)} debt is open. Settle from the Debts page once you've donated.`}
+          {dayDebt.settledAt ? (
+            `Today's ${formatCents(dayDebt.amountCents)} debt is settled.`
+          ) : (
+            <>
+              Today's {formatCents(dayDebt.amountCents)} debt is open.{" "}
+              <a href="/debts" className="font-semibold underline">
+                Upload your GoFundMe confirmation →
+              </a>
+            </>
+          )}
         </div>
       )}
 

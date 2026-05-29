@@ -50,20 +50,29 @@ model Task {
 // One debt per day. Triggered if ANY task on the day ends up OWED.
 // Amount is a flat per-day charge from settings, not a per-task multiplier.
 model Debt {
-  id            String    @id @default(cuid())
-  dayId         String    @unique
-  day           Day       @relation(fields: [dayId], references: [id], onDelete: Cascade)
-  amountCents   Int       @default(1000)
-  gofundmeUrl   String?
-  donationProof String?
-  settledAt     DateTime?
-  createdAt     DateTime  @default(now())
+  id                String    @id @default(cuid())
+  dayId             String    @unique
+  day               Day       @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  amountCents       Int       @default(700)
+  gofundmeUrl       String?
+  // Settlement proof = an uploaded confirmation email/receipt file.
+  // donationProof is the legacy free-text column (URLs or receipt IDs from
+  // before file uploads existed); new settlements populate the Path/Name/Mime
+  // /Size columns below.
+  donationProof     String?
+  donationProofPath String?
+  donationProofName String?
+  donationProofMime String?
+  donationProofSize Int?
+  donationProofNote String?
+  settledAt         DateTime?
+  createdAt         DateTime  @default(now())
 }
 
 model Settings {
   id                  String   @id @default("singleton")
   userId              String   @unique @default("jordan")
-  defaultAmountCents  Int      @default(1000)
+  defaultAmountCents  Int      @default(700)
   weeklyVoidBudget    Int      @default(2)
   timezone            String   @default("America/Toronto")
   gofundmeUrlsJson    String   @default("[]")
