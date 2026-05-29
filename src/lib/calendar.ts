@@ -1,7 +1,7 @@
 // Calendar-grid utilities. Times are stored as minutes since local 00:00.
 
 export const DAY_WINDOW_START = 6 * 60; // 06:00
-export const DAY_WINDOW_END = 23 * 60; // 23:00
+export const DAY_WINDOW_END = 24 * 60; // 24:00 (midnight)
 export const SLOT_MINUTES = 15; // snap granularity
 export const PX_PER_MIN = 1.2; // grid density
 
@@ -25,10 +25,12 @@ export function toHHMM(mins: number): string {
 }
 
 export function formatTimeLabel(mins: number): string {
+  // Handle 24:00 (calendar window end) as "12AM" — same visual as 0:00 but
+  // labeled at the bottom of today's grid rather than the top of tomorrow's.
   const h = Math.floor(mins / 60);
   const m = mins % 60;
-  const period = h >= 12 ? "PM" : "AM";
-  const h12 = h % 12 === 0 ? 12 : h % 12;
+  const period = h === 24 ? "AM" : h >= 12 ? "PM" : "AM";
+  const h12 = ((h + 11) % 12) + 1; // 0→12, 12→12, 13→1, 24→12
   return m === 0
     ? `${h12}${period}`
     : `${h12}:${String(m).padStart(2, "0")}${period}`;

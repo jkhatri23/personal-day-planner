@@ -22,7 +22,12 @@ export function CalendarGrid({
   const height = (windowEnd - windowStart) * PX_PER_MIN;
   const startHour = Math.floor(windowStart / 60);
   const endHour = Math.ceil(windowEnd / 60);
-  const hours = Array.from({ length: endHour - startHour }, (_, i) => startHour + i);
+  // Include both endpoints so the window's last hour (e.g. 12AM at the bottom)
+  // gets a labeled gridline, not just an unlabeled edge.
+  const hours = Array.from(
+    { length: endHour - startHour + 1 },
+    (_, i) => startHour + i
+  );
 
   return (
     <div className="relative" style={{ height }}>
