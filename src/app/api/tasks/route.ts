@@ -8,6 +8,7 @@ export async function POST(req: NextRequest) {
     const body = createTaskSchema.parse(await req.json());
     const day = await prisma.day.findUnique({ where: { id: body.dayId } });
     if (!day) return bad("Day not found", 404);
+    if (day.lockedAt) return bad("Day is locked — unlock to plan more tasks", 409);
 
     if (body.priority === "HIGH") {
       const highCount = await prisma.task.count({
@@ -29,6 +30,8 @@ export async function POST(req: NextRequest) {
         dayId: body.dayId,
         priority: body.priority,
         estimatedMins: body.estimatedMins ?? null,
+        startMinutes: body.startMinutes ?? null,
+        endMinutes: body.endMinutes ?? null,
         position: (max._max.position ?? -1) + 1,
       },
     });

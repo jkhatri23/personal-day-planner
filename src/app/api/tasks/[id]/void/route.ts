@@ -12,6 +12,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       include: { day: { include: { week: true } } },
     });
     if (!t) return bad("Not found", 404);
+    if (t.day.lockedAt) {
+      return bad(
+        "Day is locked — void via the reckoning at end-of-day instead",
+        409
+      );
+    }
     if (t.status === "OWED" || t.status === "SETTLED") {
       return bad("Cannot void after debt is created", 409);
     }

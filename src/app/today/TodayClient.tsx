@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckSquare, Square, Trash2, Pencil, ArrowRight, AlertTriangle } from "lucide-react";
+import { Lock, Plus, Pencil, Trash2 } from "lucide-react";
 import { cn, formatCents } from "@/lib/utils";
 import { TaskEditor } from "@/components/TaskEditor";
 import { VoidModal } from "@/components/VoidModal";
+import { CalendarGrid } from "@/components/CalendarGrid";
+import { CalendarEventBlock } from "@/components/CalendarEventBlock";
+import { packLanes, formatTimeLabel } from "@/lib/calendar";
 import { AppSettings } from "@/lib/settings";
 
 type Task = {
@@ -14,6 +17,8 @@ type Task = {
   notes: string | null;
   priority: string;
   estimatedMins: number | null;
+  startMinutes: number | null;
+  endMinutes: number | null;
   status: string;
   rescheduleCount: number;
   voidReason: string | null;
@@ -22,49 +27,49 @@ type Task = {
 
 type DayDebt = { id: string; amountCents: number; settledAt: Date | null } | null;
 
-const priorityRank: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 };
-
 export function TodayClient({
   initialTasks,
   dayDebt,
   dayId,
   weekId,
+  lockedAt,
   settings,
 }: {
   initialTasks: Task[];
   dayDebt: DayDebt;
   dayId: string;
   weekId: string;
+  lockedAt: Date | null;
   settings: AppSettings;
 }) {
   const router = useRouter();
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
-  const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<Task | null>(null);
   const [creating, setCreating] = useState(false);
   const [voiding, setVoiding] = useState<Task | null>(null);
+  const [confirmLock, setConfirmLock] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cursor, setCursor] = useState(0);
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => setTasks(initialTasks), [initialTasks]);
+  const locked = !!lockedAt;
+  const dayAmountLabel = formatCents(settings.defaultAmountCents);
 
-  const sorted = useMemo(
-    () =>
-      [...tasks].sort((a, b) => {
-        const r = (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9);
-        if (r !== 0) return r;
-        return a.position - b.position;
-      }),
-    [tasks]
-  );
+  const { scheduled, unscheduled } = useMemo(() => {
+    const sched = initialTasks.filter(
+      (t) => t.startMinutes != null && t.endMinutes != null
+    ) as (Task & { startMinutes: number; endMinutes: number })[];
+    const unsched = initialTasks.filter(
+      (t) => t.startMinutes == null || t.endMinutes == null
+    );
+    return { scheduled: packLanes(sched), unscheduled: unsched };
+  }, [initialTasks]);
 
-  const totalMins = sorted
+  const committedMins = scheduled
     .filter((t) => t.status !== "VOIDED")
-    .reduce((s, t) => s + (t.estimatedMins ?? 0), 0);
+    .reduce((s, t) => s + (t.endMinutes - t.startMinutes), 0);
 
   async function call(url: string, init?: RequestInit) {
     setError(null);
-    setBusy(url);
+    setBusy(true);
     try {
       const res = await fetch(url, {
         ...init,
@@ -80,77 +85,38 @@ export function TodayClient({
       setError(e instanceof Error ? e.message : String(e));
       throw e;
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
-  async function toggle(t: Task) {
+  async function toggleComplete(t: Task) {
     await call(`/api/tasks/${t.id}/complete`, { method: "POST" });
   }
 
-  async function remove(t: Task) {
+  async function deleteTask(t: Task) {
     if (!confirm(`Delete "${t.title}"?`)) return;
     await call(`/api/tasks/${t.id}`, { method: "DELETE" });
   }
 
-  async function pushTomorrow(t: Task) {
-    const res = await fetch(`/api/weeks/${weekId}`).then((r) => r.json());
-    const today = new Date();
-    const todayMid = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
-    const tomorrow = new Date(todayMid + 86_400_000);
-    const target = res.days.find(
-      (d: { id: string; date: string }) =>
-        new Date(d.date).getTime() === tomorrow.getTime()
-    );
-    if (!target) {
-      setError("Tomorrow isn't in the current week. Plan it from the weekly view.");
-      return;
-    }
-    await call(`/api/tasks/${t.id}/reschedule`, {
-      method: "POST",
-      body: JSON.stringify({ toDayId: target.id }),
+  async function resize(
+    t: Task,
+    next: { startMinutes: number; endMinutes: number }
+  ) {
+    await call(`/api/tasks/${t.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(next),
     });
   }
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (
-        e.target instanceof HTMLElement &&
-        ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)
-      )
-        return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-
-      if (e.key === "n") {
-        e.preventDefault();
-        setCreating(true);
-      } else if (e.key === "j") {
-        setCursor((c) => Math.min(sorted.length - 1, c + 1));
-      } else if (e.key === "k") {
-        setCursor((c) => Math.max(0, c - 1));
-      } else if (e.key === "x") {
-        const t = sorted[cursor];
-        if (t) toggle(t);
-      } else if (e.key === "v") {
-        const t = sorted[cursor];
-        if (t && t.status === "PLANNED") setVoiding(t);
-      } else if (e.key === "r") {
-        const t = sorted[cursor];
-        if (t && t.status === "PLANNED" && t.rescheduleCount < 1) pushTomorrow(t);
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [sorted, cursor]);
-
-  const dayAmountLabel = formatCents(settings.defaultAmountCents);
+  async function lockDay() {
+    setConfirmLock(false);
+    await call(`/api/days/${dayId}/lock`, { method: "POST" });
+  }
 
   return (
     <section className="space-y-4">
       <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-        <span className="font-semibold text-slate-800">
-          {dayAmountLabel}/day rule:
-        </span>{" "}
+        <span className="font-semibold text-slate-800">{dayAmountLabel}/day rule:</span>{" "}
         miss even one task at end-of-day and you owe {dayAmountLabel} for the whole
         day. (GoFundMe bills in USD — that's roughly $10 CAD.) Finish them all to
         owe nothing.
@@ -178,18 +144,42 @@ export function TodayClient({
         </div>
       )}
 
-      {totalMins > 0 && (
-        <div className="flex items-center gap-2 text-sm text-slate-500">
-          <span className="mono">
-            committed: {Math.floor(totalMins / 60)}h {totalMins % 60}m
-          </span>
-          {totalMins > 360 && (
-            <span className="flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-amber-700">
-              <AlertTriangle className="h-3.5 w-3.5" /> over-planning ({totalMins}m &gt; 6h)
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <button
+            className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-40"
+            disabled={locked || busy}
+            onClick={() => setCreating(true)}
+          >
+            <Plus className="-mt-0.5 mr-1 inline h-3.5 w-3.5" />
+            Add task
+          </button>
+          {committedMins > 0 && (
+            <span className="mono text-xs text-slate-500">
+              committed {Math.floor(committedMins / 60)}h {committedMins % 60}m
             </span>
           )}
+          {committedMins > 360 && (
+            <span className="mono text-xs text-amber-700">over-planning (&gt; 6h)</span>
+          )}
         </div>
-      )}
+        <div>
+          {locked ? (
+            <span className="mono inline-flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700">
+              <Lock className="h-3 w-3" /> locked
+            </span>
+          ) : (
+            <button
+              className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-40"
+              disabled={busy || scheduled.length + unscheduled.length === 0}
+              onClick={() => setConfirmLock(true)}
+            >
+              <Lock className="-mt-0.5 mr-1 inline h-3.5 w-3.5" />
+              Lock schedule
+            </button>
+          )}
+        </div>
+      </div>
 
       {error && (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -197,128 +187,83 @@ export function TodayClient({
         </div>
       )}
 
-      <ul className="divide-y divide-slate-200 rounded border border-slate-200">
-        {sorted.length === 0 && (
-          <li className="px-4 py-8 text-center text-sm text-slate-500">
-            No tasks planned.{" "}
-            <button
-              className="font-semibold text-slate-900 underline-offset-2 hover:underline"
-              onClick={() => setCreating(true)}
-            >
-              Plan your day →
-            </button>
-          </li>
-        )}
-        {sorted.map((t, i) => (
-          <li
-            key={t.id}
-            className={cn(
-              "group flex items-start gap-3 px-3 py-2.5",
-              i === cursor && "bg-slate-50"
-            )}
-            onMouseEnter={() => setCursor(i)}
-          >
-            <button
-              className="mt-0.5 text-slate-400 hover:text-slate-900 disabled:opacity-40"
-              disabled={
-                !!busy ||
-                t.status === "VOIDED" ||
-                t.status === "OWED" ||
-                t.status === "SETTLED"
-              }
-              onClick={() => toggle(t)}
-              aria-label="Toggle done"
-            >
-              {t.status === "DONE" || t.status === "SETTLED" ? (
-                <CheckSquare className="h-5 w-5 text-green-600" />
-              ) : (
-                <Square className="h-5 w-5" />
-              )}
-            </button>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-baseline gap-x-2">
-                <span
-                  className={cn(
-                    "truncate text-sm",
-                    t.status === "DONE" && "text-green-700 line-through decoration-green-700/40",
-                    t.status === "VOIDED" && "text-slate-400 line-through",
-                    t.status === "OWED" && "text-red-700",
-                    t.status === "SETTLED" && "text-slate-500"
-                  )}
-                >
-                  {t.title}
-                </span>
-                {t.priority === "HIGH" && (
-                  <span className="mono text-[10px] uppercase tracking-wide text-red-600">
-                    HIGH
-                  </span>
-                )}
-                {t.priority === "LOW" && (
-                  <span className="mono text-[10px] uppercase tracking-wide text-slate-400">
-                    LOW
-                  </span>
-                )}
-                {t.estimatedMins != null && (
-                  <span className="mono text-xs text-slate-400">{t.estimatedMins}m</span>
-                )}
-                {t.rescheduleCount > 0 && (
-                  <span className="mono text-[10px] text-amber-600">·rescheduled</span>
-                )}
-                {t.status === "OWED" && (
-                  <span className="mono text-xs text-red-700">
-                    counted toward day's debt
-                  </span>
-                )}
-              </div>
-              {t.notes && <p className="mt-0.5 text-xs text-slate-500">{t.notes}</p>}
-              {t.voidReason && (
-                <p className="mt-0.5 text-xs italic text-slate-400">
-                  voided: {t.voidReason}
-                </p>
-              )}
+      <div className="rounded border border-slate-200 bg-white p-3">
+        <CalendarGrid>
+          {scheduled.length === 0 && (
+            <div className="flex h-full items-center justify-center text-xs text-slate-400">
+              No tasks yet. Click "Add task" to schedule one.
             </div>
-            {t.status === "PLANNED" && (
-              <div className="flex items-center gap-1 opacity-60 transition group-hover:opacity-100">
-                <button
-                  className="rounded p-1 hover:bg-slate-200"
-                  onClick={() => setEditing(t)}
-                  aria-label="Edit"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  className="rounded p-1 hover:bg-slate-200 disabled:opacity-30"
-                  disabled={t.rescheduleCount >= 1}
-                  title={t.rescheduleCount >= 1 ? "Already rescheduled once" : "Push to tomorrow"}
-                  onClick={() => pushTomorrow(t)}
-                  aria-label="Push to tomorrow"
-                >
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  className="rounded p-1 hover:bg-slate-200"
-                  onClick={() => setVoiding(t)}
-                  aria-label="Void"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
-
-      <div className="flex items-center justify-between text-xs text-slate-500">
-        <button
-          className="rounded border border-slate-200 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50"
-          onClick={() => setCreating(true)}
-        >
-          + Add task <span className="mono ml-2 text-slate-400">n</span>
-        </button>
-        <span className="mono">
-          shortcuts: n new · j/k nav · x done · r push · v void
-        </span>
+          )}
+          {scheduled.map((t) => (
+            <CalendarEventBlock
+              key={t.id}
+              task={{
+                id: t.id,
+                title: t.title,
+                status: t.status,
+                priority: t.priority,
+                startMinutes: t.startMinutes,
+                endMinutes: t.endMinutes,
+                lane: t.lane,
+                lanes: t.lanes,
+              }}
+              locked={locked}
+              onClick={(task) => {
+                if (locked) return;
+                const full = initialTasks.find((x) => x.id === task.id);
+                if (full) setEditing(full);
+              }}
+              onToggleComplete={(task) => {
+                const full = initialTasks.find((x) => x.id === task.id);
+                if (full) toggleComplete(full);
+              }}
+              onResize={(task, next) => {
+                const full = initialTasks.find((x) => x.id === task.id);
+                if (full) resize(full, next);
+              }}
+            />
+          ))}
+        </CalendarGrid>
       </div>
+
+      {unscheduled.length > 0 && (
+        <div className="rounded border border-amber-200 bg-amber-50 p-3">
+          <p className="mono text-[10px] uppercase text-amber-800">
+            unscheduled ({unscheduled.length})
+          </p>
+          <p className="text-xs text-amber-700">
+            These need a time slot before you can lock the day.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {unscheduled.map((t) => (
+              <li
+                key={t.id}
+                className="flex items-center justify-between rounded border border-amber-300 bg-white px-2 py-1"
+              >
+                <span className="text-sm">{t.title}</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    className="rounded p-1 text-slate-500 hover:bg-amber-100"
+                    onClick={() => setEditing(t)}
+                    aria-label="Edit"
+                    disabled={locked}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    className="rounded p-1 text-slate-500 hover:bg-amber-100"
+                    onClick={() => deleteTask(t)}
+                    aria-label="Delete"
+                    disabled={locked}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {(creating || editing) && (
         <TaskEditor
@@ -341,6 +286,41 @@ export function TodayClient({
             router.refresh();
           }}
         />
+      )}
+
+      {confirmLock && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 px-4">
+          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+            <h3 className="font-semibold">Lock the schedule?</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Once locked you can't add, move, or resize tasks today. You'll
+              still be able to check things off as you go. Reckoning at
+              end-of-day works as usual.
+            </p>
+            <ul className="mt-3 mono text-xs text-slate-500">
+              {scheduled.map((t) => (
+                <li key={t.id}>
+                  {formatTimeLabel(t.startMinutes)}–{formatTimeLabel(t.endMinutes)} ·{" "}
+                  {t.title}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+                onClick={() => setConfirmLock(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
+                onClick={lockDay}
+              >
+                Lock it
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );

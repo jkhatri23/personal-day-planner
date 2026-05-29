@@ -1,20 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  DndContext,
-  DragEndEvent,
-  PointerSensor,
-  useDraggable,
-  useDroppable,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import { Plus } from "lucide-react";
+import { Lock as LockIcon, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmtDayShort, fmtDayNum, isToday, todayKey } from "@/lib/dates";
 import { TaskEditor } from "@/components/TaskEditor";
+import { CalendarGrid } from "@/components/CalendarGrid";
+import { CalendarEventBlock } from "@/components/CalendarEventBlock";
+import { packLanes } from "@/lib/calendar";
 import { IntentionInput } from "./IntentionInput";
 
 type Task = {
@@ -27,6 +21,8 @@ type Task = {
   position: number;
   rescheduleCount: number;
   voidReason: string | null;
+  startMinutes: number | null;
+  endMinutes: number | null;
 };
 type DayDebt = { id: string; amountCents: number; settledAt: Date | null } | null;
 type Day = {
@@ -34,66 +30,42 @@ type Day = {
   date: Date;
   tasks: Task[];
   reckonedAt: Date | null;
+  lockedAt: Date | null;
   debt: DayDebt;
 };
 type Week = { id: string; startDate: Date; intention: string | null; days: Day[] };
 
 export function WeekClient({ week }: { week: Week }) {
   const router = useRouter();
-  const [dragErr, setDragErr] = useState<string | null>(null);
   const [editingDay, setEditingDay] = useState<string | null>(null);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-
   const today = todayKey();
 
-  async function onDragEnd(ev: DragEndEvent) {
-    const taskId = String(ev.active.id);
-    const toDayId = ev.over?.id ? String(ev.over.id) : null;
-    if (!toDayId) return;
-    const fromDay = week.days.find((d) => d.tasks.some((t) => t.id === taskId));
-    if (!fromDay || fromDay.id === toDayId) return;
-
-    setDragErr(null);
-    const res = await fetch(`/api/tasks/${taskId}/move`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ toDayId }),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      setDragErr(j.error ?? `HTTP ${res.status}`);
-    }
-    router.refresh();
-  }
-
   return (
-    <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+    <>
       <IntentionInput weekId={week.id} initial={week.intention} />
-      {dragErr && (
-        <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {dragErr}
+      <div className="overflow-x-auto rounded border border-slate-200 bg-white">
+        <div className="grid min-w-[900px] grid-cols-7 divide-x divide-slate-100">
+          {week.days.map((d) => (
+            <DayColumn
+              key={d.id}
+              day={d}
+              isToday={isToday(d.date, today)}
+              onAdd={() => setEditingDay(d.id)}
+            />
+          ))}
         </div>
-      )}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-7">
-        {week.days.map((d) => (
-          <DayColumn
-            key={d.id}
-            day={d}
-            isToday={isToday(d.date, today)}
-            onAdd={() => setEditingDay(d.id)}
-          />
-        ))}
       </div>
 
       {editingDay && (
         <TaskEditor
           dayId={editingDay}
           task={null}
+          isToday={false}
           onClose={() => setEditingDay(null)}
           onSaved={() => router.refresh()}
         />
       )}
-    </DndContext>
+    </>
   );
 }
 
@@ -106,94 +78,82 @@ function DayColumn({
   isToday: boolean;
   onAdd: () => void;
 }) {
-  const { isOver, setNodeRef } = useDroppable({ id: day.id });
+  const scheduled = useMemo(() => {
+    const sched = day.tasks.filter(
+      (t) => t.startMinutes != null && t.endMinutes != null
+    ) as (Task & { startMinutes: number; endMinutes: number })[];
+    return packLanes(sched);
+  }, [day.tasks]);
+
+  const unscheduled = day.tasks.filter(
+    (t) => t.startMinutes == null || t.endMinutes == null
+  );
+
+  const locked = !!day.lockedAt;
+
   return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        "flex min-h-[260px] flex-col rounded border bg-white",
-        isOver ? "border-slate-900" : "border-slate-200",
-        isToday && "ring-1 ring-slate-900/40"
-      )}
-    >
-      <header className="flex items-baseline justify-between border-b border-slate-100 px-3 py-2">
+    <div className={cn("flex flex-col", isToday && "bg-slate-50/30")}>
+      <header className="flex items-baseline justify-between gap-1 border-b border-slate-100 px-2 py-1.5">
         <div>
           <p className="mono text-[10px] uppercase tracking-wide text-slate-500">
             {fmtDayShort(day.date)}
           </p>
-          <p className={cn("mono text-lg", isToday && "font-semibold")}>
+          <p className={cn("mono text-base", isToday && "font-semibold")}>
             {fmtDayNum(day.date)}
           </p>
         </div>
         <div className="flex items-center gap-1">
+          {locked && (
+            <span title="schedule locked">
+              <LockIcon className="h-3 w-3 text-slate-500" />
+            </span>
+          )}
           {day.debt && !day.debt.settledAt && (
-            <span className="mono text-[10px] uppercase text-red-700">
+            <span className="mono text-[9px] uppercase text-red-700">
               ${(day.debt.amountCents / 100).toFixed(0)} owed
             </span>
           )}
           {day.debt?.settledAt && (
-            <span className="mono text-[10px] uppercase text-green-700">settled</span>
+            <span className="mono text-[9px] uppercase text-green-700">settled</span>
           )}
-          {day.reckonedAt && !day.debt && (
-            <span className="mono text-[10px] uppercase text-green-700">reckoned</span>
+          {!locked && (
+            <button
+              className="rounded p-0.5 text-slate-400 hover:bg-slate-100"
+              onClick={onAdd}
+              aria-label="Add task"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
           )}
-          <button
-            className="rounded p-1 text-slate-500 hover:bg-slate-100"
-            onClick={onAdd}
-            aria-label="Add task"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
         </div>
       </header>
-      <ul className="flex-1 space-y-1 p-2">
-        {day.tasks.length === 0 && (
-          <li className="px-1 py-3 text-center text-xs text-slate-300">empty</li>
-        )}
-        {day.tasks.map((t) => (
-          <TaskCard key={t.id} task={t} />
-        ))}
-      </ul>
-    </div>
-  );
-}
 
-function TaskCard({ task }: { task: Task }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: task.id,
-    disabled: task.status !== "PLANNED",
-  });
-  const style = transform
-    ? { transform: `translate(${transform.x}px, ${transform.y}px)` }
-    : undefined;
-  return (
-    <li
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      className={cn(
-        "rounded border border-slate-200 px-2 py-1.5 text-xs",
-        isDragging && "opacity-50",
-        task.status === "PLANNED" && "cursor-grab bg-white hover:border-slate-400",
-        task.status === "DONE" && "bg-green-50 text-green-800 line-through decoration-green-700/40",
-        task.status === "VOIDED" && "bg-slate-50 text-slate-400 line-through",
-        task.status === "OWED" && "bg-red-50 text-red-700",
-        task.status === "SETTLED" && "bg-slate-50 text-slate-500"
-      )}
-    >
-      <div className="flex items-baseline gap-1">
-        {task.priority === "HIGH" && (
-          <span className="mono text-[9px] uppercase text-red-600">H</span>
+      <div className="px-2 py-2">
+        <CalendarGrid showHourLabels={false}>
+          {scheduled.map((t) => (
+            <CalendarEventBlock
+              key={t.id}
+              task={{
+                id: t.id,
+                title: t.title,
+                status: t.status,
+                priority: t.priority,
+                startMinutes: t.startMinutes,
+                endMinutes: t.endMinutes,
+                lane: t.lane,
+                lanes: t.lanes,
+              }}
+              locked
+              compact
+            />
+          ))}
+        </CalendarGrid>
+        {unscheduled.length > 0 && (
+          <p className="mono mt-1 text-[10px] text-amber-700">
+            +{unscheduled.length} unscheduled
+          </p>
         )}
-        {task.priority === "LOW" && (
-          <span className="mono text-[9px] uppercase text-slate-400">L</span>
-        )}
-        <span className="truncate">{task.title}</span>
       </div>
-      {task.estimatedMins != null && (
-        <span className="mono text-[10px] text-slate-400">{task.estimatedMins}m</span>
-      )}
-    </li>
+    </div>
   );
 }

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { CheckCircle2, XCircle, DollarSign, AlertTriangle } from "lucide-react";
 import { cn, formatCents } from "@/lib/utils";
 import { SettleDebtForm } from "@/components/SettleDebtForm";
+import { formatTimeLabel } from "@/lib/calendar";
 
 type PlannedTask = {
   id: string;
@@ -13,6 +14,8 @@ type PlannedTask = {
   notes: string | null;
   priority: string;
   estimatedMins: number | null;
+  startMinutes: number | null;
+  endMinutes: number | null;
   rescheduleCount: number;
 };
 
@@ -257,8 +260,10 @@ export function ReckonClient({
                             <p className="text-xs text-slate-500">{t.notes}</p>
                           )}
                           <p className="mono mt-0.5 text-[10px] uppercase text-slate-400">
+                            {t.startMinutes != null && t.endMinutes != null
+                              ? `${formatTimeLabel(t.startMinutes)}–${formatTimeLabel(t.endMinutes)} · `
+                              : ""}
                             {t.priority}
-                            {t.estimatedMins ? ` · ${t.estimatedMins}m` : ""}
                             {t.rescheduleCount > 0 ? " · rescheduled" : ""}
                           </p>
                         </div>

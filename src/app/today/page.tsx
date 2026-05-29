@@ -15,7 +15,7 @@ export default async function TodayPage() {
   const fresh = await prisma.day.findUnique({
     where: { id: day.id },
     include: {
-      tasks: { orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
+      tasks: { orderBy: [{ startMinutes: "asc" }, { position: "asc" }] },
       debt: true,
     },
   });
@@ -38,12 +38,7 @@ export default async function TodayPage() {
             : prev.debt?.settledAt
               ? "debt settled"
               : "no debt";
-        return {
-          date: prev.date,
-          done,
-          total: tracked.length,
-          owedLabel,
-        };
+        return { done, total: tracked.length, owedLabel };
       })()
     : null;
 
@@ -51,19 +46,20 @@ export default async function TodayPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-baseline justify-between">
+      <header className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
           <h1 className="text-2xl font-semibold">{fmtDayLabel(today)}</h1>
           <p className="text-sm text-slate-500">
-            {fresh?.tasks.length ?? 0} tasks planned · week starting{" "}
+            {fresh?.tasks.length ?? 0} tasks · week starting{" "}
             <span className="mono">{fmtDayLabel(week.startDate)}</span>
+            {fresh?.lockedAt && (
+              <span className="ml-2 mono text-xs text-slate-700">· schedule locked</span>
+            )}
           </p>
         </div>
         {prevSummary && (
           <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-right">
-            <p className="text-xs uppercase tracking-wide text-slate-500">
-              Yesterday
-            </p>
+            <p className="text-xs uppercase tracking-wide text-slate-500">Yesterday</p>
             <p className="mono text-sm text-slate-800">
               {prevSummary.done}/{prevSummary.total} done · {prevSummary.owedLabel}
             </p>
@@ -76,6 +72,7 @@ export default async function TodayPage() {
         dayDebt={fresh?.debt ?? null}
         dayId={day.id}
         weekId={week.id}
+        lockedAt={fresh?.lockedAt ?? null}
         settings={settings}
       />
     </div>

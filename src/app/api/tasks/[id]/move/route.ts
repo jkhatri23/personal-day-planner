@@ -16,10 +16,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       include: { day: true },
     });
     if (!t) return bad("Not found", 404);
+    if (t.day.lockedAt) return bad("Source day is locked", 409);
     if (t.status !== "PLANNED") return bad("Only PLANNED tasks can be moved", 409);
 
     const target = await prisma.day.findUnique({ where: { id: toDayId } });
     if (!target) return bad("Target day not found", 404);
+    if (target.lockedAt) return bad("Target day is locked", 409);
 
     const sameDay = t.dayId === toDayId;
     let pos = position;

@@ -15,7 +15,7 @@ export default async function WeekPage({ params }: { params: { weekId: string } 
         orderBy: { date: "asc" },
         include: {
           debt: true,
-          tasks: { orderBy: [{ position: "asc" }, { createdAt: "asc" }] },
+          tasks: { orderBy: [{ startMinutes: "asc" }, { position: "asc" }] },
         },
       },
     },

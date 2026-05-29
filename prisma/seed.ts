@@ -43,28 +43,40 @@ async function main() {
   );
   const todayDay = week.days.find((d) => d.date.getTime() === todayKey.getTime())!;
 
+  // Demo schedule, all timed. Times are minutes from local midnight.
   await prisma.task.createMany({
     data: [
       {
         title: "Morning workout",
         dayId: todayDay.id,
         priority: "MEDIUM",
-        estimatedMins: 45,
+        startMinutes: 7 * 60,
+        endMinutes: 8 * 60,
         position: 0,
       },
       {
-        title: "Plan the week (this app)",
+        title: "Deep work: planner UI",
         dayId: todayDay.id,
         priority: "HIGH",
-        estimatedMins: 30,
+        startMinutes: 9 * 60,
+        endMinutes: 11 * 60,
         position: 1,
       },
       {
         title: "Review BeWell PRs",
         dayId: todayDay.id,
         priority: "HIGH",
-        estimatedMins: 60,
+        startMinutes: 13 * 60,
+        endMinutes: 14 * 60 + 30,
         position: 2,
+      },
+      {
+        title: "Read 30 pages",
+        dayId: todayDay.id,
+        priority: "LOW",
+        startMinutes: 20 * 60,
+        endMinutes: 20 * 60 + 30,
+        position: 3,
       },
     ],
   });

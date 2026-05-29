@@ -25,6 +25,7 @@ model Day {
   week       Week      @relation(fields: [weekId], references: [id], onDelete: Cascade)
   tasks      Task[]
   debt       Debt?
+  lockedAt   DateTime?
   reckonedAt DateTime?
   reflection String?
 }
@@ -37,6 +38,11 @@ model Task {
   day             Day       @relation(fields: [dayId], references: [id], onDelete: Cascade)
   priority        String    @default("MEDIUM") // LOW | MEDIUM | HIGH
   estimatedMins   Int?
+  // Calendar slot: minutes since local 00:00. Null means "unscheduled" — kept
+  // for backwards compat with rows created before the calendar feature; the
+  // UI surfaces these in a tray and asks the user to schedule them.
+  startMinutes    Int?
+  endMinutes      Int?
   status          String    @default("PLANNED") // PLANNED | DONE | VOIDED | OWED | SETTLED
   completedAt     DateTime?
   backdated       Boolean   @default(false)

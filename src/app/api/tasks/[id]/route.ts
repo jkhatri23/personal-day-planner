@@ -12,6 +12,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       include: { day: true },
     });
     if (!existing) return bad("Not found", 404);
+    if (existing.day.lockedAt) return bad("Day is locked — cannot edit tasks", 409);
+
+    // Combined time validation: both must end up either set or null, and
+    // span ≥ 15 min.
+    const nextStart =
+      body.startMinutes === undefined ? existing.startMinutes : body.startMinutes;
+    const nextEnd =
+      body.endMinutes === undefined ? existing.endMinutes : body.endMinutes;
+    if ((nextStart == null) !== (nextEnd == null))
+      return bad("Provide both start and end (or neither)", 422);
+    if (nextStart != null && nextEnd != null && nextEnd - nextStart < 15)
+      return bad("End must be at least 15 minutes after start", 422);
 
     if (body.priority === "HIGH" && existing.priority !== "HIGH") {
       const highCount = await prisma.task.count({
@@ -44,6 +56,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
       include: { day: true },
     });
     if (!t) return bad("Not found", 404);
+    if (t.day.lockedAt) return bad("Day is locked — cannot delete tasks", 409);
     if (t.status !== "PLANNED") return bad("Can only delete PLANNED tasks", 409);
     const today = todayKey();
     if (t.day.date.getTime() !== today.getTime()) {

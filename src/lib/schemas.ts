@@ -9,13 +9,27 @@ export const TaskStatus = z.enum([
   "SETTLED",
 ]);
 
+const timeSlot = z.object({
+  startMinutes: z.number().int().min(0).max(24 * 60 - 15),
+  endMinutes: z.number().int().min(15).max(24 * 60),
+}).refine((v) => v.endMinutes - v.startMinutes >= 15, {
+  message: "End time must be at least 15 minutes after start",
+});
+
 export const createTaskSchema = z.object({
   title: z.string().trim().min(1).max(200),
   notes: z.string().max(2000).optional().nullable(),
   dayId: z.string().min(1),
   priority: Priority.default("MEDIUM"),
   estimatedMins: z.number().int().positive().max(24 * 60).optional().nullable(),
-});
+  startMinutes: z.number().int().min(0).max(24 * 60 - 15).optional().nullable(),
+  endMinutes: z.number().int().min(15).max(24 * 60).optional().nullable(),
+}).refine(
+  (v) =>
+    (v.startMinutes == null && v.endMinutes == null) ||
+    (v.startMinutes != null && v.endMinutes != null && v.endMinutes - v.startMinutes >= 15),
+  { message: "Provide both start and end (≥15 min apart) or neither", path: ["endMinutes"] }
+);
 
 export const updateTaskSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
@@ -28,6 +42,8 @@ export const updateTaskSchema = z.object({
     .max(24 * 60)
     .nullable()
     .optional(),
+  startMinutes: z.number().int().min(0).max(24 * 60 - 15).nullable().optional(),
+  endMinutes: z.number().int().min(15).max(24 * 60).nullable().optional(),
 });
 
 export const voidTaskSchema = z.object({
