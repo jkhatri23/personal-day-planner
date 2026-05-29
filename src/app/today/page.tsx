@@ -73,6 +73,7 @@ export default async function TodayPage() {
         dayId={day.id}
         weekId={week.id}
         lockedAt={fresh?.lockedAt ?? null}
+        unlockCount={fresh?.unlockCount ?? 0}
         settings={settings}
       />
     </div>

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, Plus, Pencil, Trash2 } from "lucide-react";
+import { Lock, Unlock, Plus, Pencil, Trash2 } from "lucide-react";
 import { cn, formatCents } from "@/lib/utils";
 import { TaskEditor } from "@/components/TaskEditor";
 import { VoidModal } from "@/components/VoidModal";
@@ -27,12 +27,15 @@ type Task = {
 
 type DayDebt = { id: string; amountCents: number; settledAt: Date | null } | null;
 
+const UNLOCKS_PER_DAY = 1;
+
 export function TodayClient({
   initialTasks,
   dayDebt,
   dayId,
   weekId,
   lockedAt,
+  unlockCount,
   settings,
 }: {
   initialTasks: Task[];
@@ -40,6 +43,7 @@ export function TodayClient({
   dayId: string;
   weekId: string;
   lockedAt: Date | null;
+  unlockCount: number;
   settings: AppSettings;
 }) {
   const router = useRouter();
@@ -47,10 +51,12 @@ export function TodayClient({
   const [creating, setCreating] = useState(false);
   const [voiding, setVoiding] = useState<Task | null>(null);
   const [confirmLock, setConfirmLock] = useState(false);
+  const [confirmUnlock, setConfirmUnlock] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const locked = !!lockedAt;
+  const unlocksLeft = Math.max(0, UNLOCKS_PER_DAY - unlockCount);
   const dayAmountLabel = formatCents(settings.defaultAmountCents);
 
   const { scheduled, unscheduled } = useMemo(() => {
@@ -113,6 +119,11 @@ export function TodayClient({
     await call(`/api/days/${dayId}/lock`, { method: "POST" });
   }
 
+  async function unlockDay() {
+    setConfirmUnlock(false);
+    await call(`/api/days/${dayId}/unlock`, { method: "POST" });
+  }
+
   return (
     <section className="space-y-4">
       <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
@@ -163,20 +174,43 @@ export function TodayClient({
             <span className="mono text-xs text-amber-700">over-planning (&gt; 6h)</span>
           )}
         </div>
-        <div>
+        <div className="flex items-center gap-2">
           {locked ? (
-            <span className="mono inline-flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700">
-              <Lock className="h-3 w-3" /> locked
-            </span>
+            <>
+              <span className="mono inline-flex items-center gap-1 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700">
+                <Lock className="h-3 w-3" /> locked
+              </span>
+              {unlocksLeft > 0 ? (
+                <button
+                  className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-40"
+                  disabled={busy}
+                  onClick={() => setConfirmUnlock(true)}
+                >
+                  <Unlock className="-mt-0.5 mr-1 inline h-3.5 w-3.5" />
+                  Unlock ({unlocksLeft} left)
+                </button>
+              ) : (
+                <span className="mono text-[11px] text-slate-500" title="One unlock per day. You've used yours.">
+                  no unlocks left
+                </span>
+              )}
+            </>
           ) : (
-            <button
-              className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-40"
-              disabled={busy || scheduled.length + unscheduled.length === 0}
-              onClick={() => setConfirmLock(true)}
-            >
-              <Lock className="-mt-0.5 mr-1 inline h-3.5 w-3.5" />
-              Lock schedule
-            </button>
+            <>
+              <button
+                className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-40"
+                disabled={busy || scheduled.length + unscheduled.length === 0}
+                onClick={() => setConfirmLock(true)}
+              >
+                <Lock className="-mt-0.5 mr-1 inline h-3.5 w-3.5" />
+                Lock schedule
+              </button>
+              {unlockCount > 0 && (
+                <span className="mono text-[11px] text-slate-500" title="One unlock per day. You've used it — re-locking is fine, but you can't unlock again.">
+                  unlock used
+                </span>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -297,6 +331,17 @@ export function TodayClient({
               still be able to check things off as you go. Reckoning at
               end-of-day works as usual.
             </p>
+            {unlocksLeft > 0 ? (
+              <p className="mt-2 text-xs text-slate-500">
+                You'll have {unlocksLeft} unlock left if you need to adjust later
+                — one per day, total.
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-amber-700">
+                You've already used your one unlock for today. Re-locking is
+                final — no more unlocks until tomorrow.
+              </p>
+            )}
             <ul className="mt-3 mono text-xs text-slate-500">
               {scheduled.map((t) => (
                 <li key={t.id}>
@@ -317,6 +362,33 @@ export function TodayClient({
                 onClick={lockDay}
               >
                 Lock it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmUnlock && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 px-4">
+          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
+            <h3 className="font-semibold">Use your unlock for today?</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              You get exactly one unlock per day. After this, you can re-lock
+              when you're ready, but you can't unlock again — the schedule is
+              final until reckoning.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+                onClick={() => setConfirmUnlock(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700"
+                onClick={unlockDay}
+              >
+                Use my unlock
               </button>
             </div>
           </div>

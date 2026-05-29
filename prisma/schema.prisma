@@ -19,15 +19,19 @@ model Week {
 }
 
 model Day {
-  id         String    @id @default(cuid())
-  date       DateTime  @unique
-  weekId     String
-  week       Week      @relation(fields: [weekId], references: [id], onDelete: Cascade)
-  tasks      Task[]
-  debt       Debt?
-  lockedAt   DateTime?
-  reckonedAt DateTime?
-  reflection String?
+  id          String    @id @default(cuid())
+  date        DateTime  @unique
+  weekId      String
+  week        Week      @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  tasks       Task[]
+  debt        Debt?
+  lockedAt    DateTime?
+  // Lifetime unlock count for this day; capped at 1 per the "one unlock per
+  // day" rule. Persists across lock→unlock→re-lock cycles, so re-locking
+  // doesn't refresh the budget.
+  unlockCount Int       @default(0)
+  reckonedAt  DateTime?
+  reflection  String?
 }
 
 model Task {
